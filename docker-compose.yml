@@ -14,6 +14,13 @@ services:
       - SEARCH_QUERY=has:attachment
       - MAX_MESSAGES=100
       - GMAIL_CREDENTIALS_FILE=/app/credentials/credentials.json
+      - CREATE_SUBJECT_FOLDERS=true
+      # Date filtering (YYYY/MM/DD format)
+      # - DATE_FROM=2024/01/01
+      # - DATE_TO=2024/12/31
+      # Regular expression filters
+      # - SUBJECT_REGEX=.*invoice.*
+      # - FILENAME_REGEX=\.(pdf|xlsx?|docx?)$
       # Add your Gmail credentials as environment variables if using service account
       # - GMAIL_USERNAME=${GMAIL_USERNAME}
       # - GMAIL_PASSWORD=${GMAIL_PASSWORD}
@@ -34,6 +41,13 @@ services:
       - SEARCH_QUERY=has:attachment
       - MAX_MESSAGES=100
       - GMAIL_CREDENTIALS_FILE=/app/credentials/credentials.json
+      - CREATE_SUBJECT_FOLDERS=true
+      # Date filtering (YYYY/MM/DD format)
+      # - DATE_FROM=2024/01/01
+      # - DATE_TO=2024/12/31
+      # Regular expression filters
+      # - SUBJECT_REGEX=.*invoice.*
+      # - FILENAME_REGEX=\.(pdf|xlsx?|docx?)$
     volumes:
       - ./downloads:/app/downloads
       - ./credentials:/app/credentials

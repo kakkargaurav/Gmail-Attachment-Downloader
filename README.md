@@ -8,13 +8,19 @@ A Python application that downloads all attachments from Gmail messages using th
 ## Features
 
 - Download all attachments from Gmail messages
-- Configurable search queries to filter messages
+- **Advanced Filtering Options:**
+  - Configurable search queries to filter messages
+  - Date range filtering (DATE_FROM/DATE_TO)
+  - Subject regex filtering for precise email matching
+  - Attachment filename regex filtering
 - OAuth2 authentication with Gmail API
-- Organized folder structure for downloaded attachments
+- **Flexible Organization:**
+  - Organized folder structure by email subjects (optional)
+  - Direct download without folders (configurable)
 - Docker containerization with multi-architecture support (amd64/arm64)
 - GitHub Container Registry (GHCR) deployment
 - Environment variable configuration
-- Comprehensive logging
+- Comprehensive logging with filtering statistics
 - Resume capability with stored credentials
 - Automated CI/CD with GitHub Actions
 
@@ -118,22 +124,87 @@ docker run -v $(pwd)/downloads:/app/downloads \
 
 ## Configuration
 
-### Environment Variables
+### Required Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DOWNLOAD_PATH` | `./downloads` | Path where attachments will be saved |
-| `SEARCH_QUERY` | `has:attachment` | Gmail search query to filter messages |
-| `MAX_MESSAGES` | `100` | Maximum number of messages to process |
-| `GMAIL_CREDENTIALS_FILE` | `./credentials/credentials.json` | Path to OAuth2 credentials file |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GMAIL_CREDENTIALS_FILE` | Path to OAuth2 credentials | `credentials/credentials.json` |
+| `DOWNLOAD_PATH` | Download directory | `./downloads` |
+
+### Basic Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SEARCH_QUERY` | Gmail search query | `has:attachment` |
+| `MAX_MESSAGES` | Maximum messages to process | `100` |
+| `CREATE_SUBJECT_FOLDERS` | Create folders by email subject | `true` |
+
+### Advanced Filtering Options
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DATE_FROM` | Start date (YYYY/MM/DD) | `2024/01/01` |
+| `DATE_TO` | End date (YYYY/MM/DD) | `2024/12/31` |
+| `SUBJECT_REGEX` | Subject line regex filter | `.*invoice.*` |
+| `FILENAME_REGEX` | Attachment filename regex | `\.(pdf\|xlsx?)$` |
+
+### Configuration Examples
+
+#### Download Only PDFs from 2024
+```bash
+DATE_FROM=2024/01/01
+DATE_TO=2024/12/31
+FILENAME_REGEX=\.pdf$
+```
+
+#### Download Invoices and Receipts
+```bash
+SUBJECT_REGEX=.*(invoice|receipt).*
+CREATE_SUBJECT_FOLDERS=true
+```
+
+#### Download Office Documents Without Folders
+```bash
+FILENAME_REGEX=\.(pdf|doc|docx|xls|xlsx)$
+CREATE_SUBJECT_FOLDERS=false
+```
+
+#### Filter by Sender and Date Range
+```bash
+SEARCH_QUERY=has:attachment from:accounts@company.com
+DATE_FROM=2024/06/01
+DATE_TO=2024/06/30
+```
 
 ### Search Query Examples
 
+**Basic Queries:**
 - `has:attachment` - All messages with attachments
 - `has:attachment from:example@gmail.com` - Attachments from specific sender
 - `has:attachment subject:"Invoice"` - Attachments from messages with "Invoice" in subject
-- `has:attachment after:2023/01/01` - Attachments from messages after January 1, 2023
 - `has:attachment larger:5M` - Attachments from messages larger than 5MB
+
+**Advanced Combinations:**
+- Date filtering is handled by `DATE_FROM`/`DATE_TO` environment variables
+- Subject filtering is enhanced by `SUBJECT_REGEX` for precise pattern matching
+- Filename filtering uses `FILENAME_REGEX` for attachment-specific filtering
+
+**Example Configurations:**
+```bash
+# Financial documents from banks
+SEARCH_QUERY="has:attachment from:noreply@bank.com"
+SUBJECT_REGEX=".*(statement|invoice).*"
+FILENAME_REGEX="\.pdf$"
+
+# Recent presentations and documents
+DATE_FROM="2024/01/01"
+FILENAME_REGEX="\.(pptx?|docx?|xlsx?)$"
+
+# Images from specific timeframe
+DATE_FROM="2024/06/01"
+DATE_TO="2024/06/30"
+FILENAME_REGEX="\.(jpg|jpeg|png|gif)$"
+```
 
 ## Usage
 
@@ -302,6 +373,15 @@ docker push your-registry/gmail-downloader:latest
 
 This project is licensed under the MIT License.
 
+## 📚 Additional Resources
+
+- [QUICKSTART.md](QUICKSTART.md) - Get running in 5 minutes
+- [ADVANCED_EXAMPLES.md](ADVANCED_EXAMPLES.md) - Real-world filtering scenarios
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment guide
+- [Gmail Search Operators](https://support.google.com/mail/answer/7190?hl=en)
+- [Google Cloud Console](https://console.cloud.google.com/)
+- [Regular Expressions Guide](https://regexr.com/) - Test and learn regex patterns
+
 ## Support
 
 For issues and questions:
@@ -311,10 +391,18 @@ For issues and questions:
 
 ## Changelog
 
-### v1.0.0
-- Initial release
+### v2.0.0 - Enhanced Filtering & Organization
+- **🎯 Advanced Filtering**: Date range filtering with `DATE_FROM`/`DATE_TO`
+- **🔍 Regex Support**: Subject and filename regex pattern matching
+- **📁 Flexible Organization**: Optional subject folder creation via `CREATE_SUBJECT_FOLDERS`
+- **📊 Enhanced Logging**: Filtering statistics and improved reporting
+- **📖 Comprehensive Documentation**: QUICKSTART.md and ADVANCED_EXAMPLES.md guides
+- **🔧 Production Ready**: Enhanced configuration options for enterprise use
+
+### v1.0.0 - Initial Release
+- Initial release with core functionality
 - OAuth2 authentication
-- Attachment download functionality
+- Basic attachment download functionality
 - Docker containerization with multi-architecture support
 - GitHub Container Registry integration
 - GitHub Actions CI/CD pipeline

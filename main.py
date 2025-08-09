@@ -11,6 +11,7 @@ import sys
 import json
 import base64
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -40,14 +41,16 @@ logger = logging.getLogger(__name__)
 class GmailDownloader:
     """Gmail attachment downloader class."""
     
-    def __init__(self, download_path: str = './downloads'):
+    def __init__(self, download_path: str = './downloads', create_subject_folders: bool = True):
         """Initialize the Gmail downloader.
         
         Args:
             download_path: Path where attachments will be saved
+            create_subject_folders: Whether to create folders based on email subjects
         """
         self.download_path = Path(download_path)
         self.download_path.mkdir(parents=True, exist_ok=True)
+        self.create_subject_folders = create_subject_folders
         self.service = None
         self.credentials = None
         
@@ -70,9 +73,11 @@ class GmailDownloader:
                     self.credentials.refresh(Request())
                 else:
                     # Check if we have credentials file
-                    creds_file = os.getenv('GMAIL_CREDENTIALS_FILE', 'credentials.json')
+                    creds_file = os.getenv('GMAIL_CREDENTIALS_FILE', 'credentials/credentials.json')
                     if not os.path.exists(creds_file):
                         logger.error(f"Credentials file {creds_file} not found!")
+                        logger.info("Please place your OAuth2 credentials file at: credentials/credentials.json")
+                        logger.info("See credentials/README.txt for setup instructions")
                         return False
                     
                     logger.info("Starting OAuth2 flow...")
@@ -92,6 +97,50 @@ class GmailDownloader:
             logger.error(f"Authentication failed: {str(e)}")
             return False
     
+    def build_search_query(self, base_query: str = '', date_from: str = '', date_to: str = '',
+                          subject_regex: str = '') -> str:
+        """Build Gmail search query with filters.
+        
+        Args:
+            base_query: Base search query (e.g., 'has:attachment')
+            date_from: Start date in YYYY/MM/DD format
+            date_to: End date in YYYY/MM/DD format
+            subject_regex: Subject filter (will be converted to Gmail search format)
+            
+        Returns:
+            Complete search query string
+        """
+        query_parts = []
+        
+        if base_query:
+            query_parts.append(base_query)
+        
+        if date_from:
+            try:
+                # Validate date format
+                datetime.strptime(date_from, '%Y/%m/%d')
+                query_parts.append(f"after:{date_from}")
+            except ValueError:
+                logger.warning(f"Invalid DATE_FROM format: {date_from}. Expected YYYY/MM/DD")
+        
+        if date_to:
+            try:
+                # Validate date format
+                datetime.strptime(date_to, '%Y/%m/%d')
+                query_parts.append(f"before:{date_to}")
+            except ValueError:
+                logger.warning(f"Invalid DATE_TO format: {date_to}. Expected YYYY/MM/DD")
+        
+        if subject_regex:
+            # For Gmail search, we'll use simple contains search
+            # Regex filtering will be applied post-retrieval
+            # Remove common regex characters for basic Gmail search
+            simple_subject = re.sub(r'[.*+?^${}()|[\]\\]', '', subject_regex)
+            if simple_subject:
+                query_parts.append(f'subject:"{simple_subject}"')
+        
+        return ' '.join(query_parts)
+
     def get_messages(self, query: str = '', max_results: int = 100) -> List[Dict[str, Any]]:
         """Get Gmail messages.
         
@@ -172,11 +221,14 @@ class GmailDownloader:
             logger.error(f"Failed to download attachment {filename}: {str(e)}")
             return False
     
-    def process_message_attachments(self, message: Dict[str, Any]) -> int:
+    def process_message_attachments(self, message: Dict[str, Any], subject_regex: str = '',
+                                   filename_regex: str = '') -> int:
         """Process all attachments in a message.
         
         Args:
             message: Gmail message dictionary
+            subject_regex: Regular expression to filter by subject
+            filename_regex: Regular expression to filter attachment filenames
             
         Returns:
             Number of attachments downloaded
@@ -189,6 +241,16 @@ class GmailDownloader:
         subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
         date_header = next((h['value'] for h in headers if h['name'].lower() == 'date'), '')
         
+        # Apply subject regex filter if specified
+        if subject_regex:
+            try:
+                if not re.search(subject_regex, subject, re.IGNORECASE):
+                    logger.debug(f"Subject doesn't match regex '{subject_regex}': {subject}")
+                    return 0
+            except re.error as e:
+                logger.warning(f"Invalid subject regex '{subject_regex}': {e}")
+                return 0
+        
         # Create a safe filename from subject and date
         safe_subject = "".join(c for c in subject if c.isalnum() or c in (' ', '-', '_')).rstrip()
         safe_subject = safe_subject[:50]  # Limit length
@@ -199,9 +261,25 @@ class GmailDownloader:
             if part.get('filename'):
                 attachment_id = part.get('body', {}).get('attachmentId')
                 if attachment_id:
-                    # Create organized folder structure
-                    folder_name = f"{safe_subject}_{message_id[:8]}"
-                    filename = os.path.join(folder_name, part['filename'])
+                    original_filename = part['filename']
+                    
+                    # Apply filename regex filter if specified
+                    if filename_regex:
+                        try:
+                            if not re.search(filename_regex, original_filename, re.IGNORECASE):
+                                logger.debug(f"Filename doesn't match regex '{filename_regex}': {original_filename}")
+                                return
+                        except re.error as e:
+                            logger.warning(f"Invalid filename regex '{filename_regex}': {e}")
+                            return
+                    
+                    # Determine final filename path
+                    if self.create_subject_folders:
+                        folder_name = f"{safe_subject}_{message_id[:8]}"
+                        filename = os.path.join(folder_name, original_filename)
+                    else:
+                        # Add message ID prefix to avoid filename conflicts
+                        filename = f"{message_id[:8]}_{original_filename}"
                     
                     if self.download_attachment(message_id, attachment_id, filename):
                         downloaded_count += 1
@@ -217,19 +295,22 @@ class GmailDownloader:
         
         return downloaded_count
     
-    def download_all_attachments(self, query: str = 'has:attachment', max_messages: int = 100) -> Dict[str, int]:
+    def download_all_attachments(self, query: str = 'has:attachment', max_messages: int = 100,
+                                subject_regex: str = '', filename_regex: str = '') -> Dict[str, int]:
         """Download all attachments from Gmail messages matching the query.
         
         Args:
             query: Gmail search query
             max_messages: Maximum number of messages to process
+            subject_regex: Regular expression to filter by subject
+            filename_regex: Regular expression to filter attachment filenames
             
         Returns:
             Dictionary with download statistics
         """
         if not self.service:
             logger.error("Not authenticated. Please call authenticate() first.")
-            return {'messages_processed': 0, 'attachments_downloaded': 0}
+            return {'messages_processed': 0, 'attachments_downloaded': 0, 'messages_filtered': 0}
         
         logger.info("Starting attachment download process...")
         
@@ -238,6 +319,7 @@ class GmailDownloader:
         
         total_attachments = 0
         processed_messages = 0
+        filtered_messages = 0
         
         for message in messages:
             logger.info(f"Processing message {processed_messages + 1}/{len(messages)}")
@@ -245,16 +327,26 @@ class GmailDownloader:
             # Get detailed message info
             detailed_message = self.get_message_details(message['id'])
             if detailed_message:
-                attachments_count = self.process_message_attachments(detailed_message)
-                total_attachments += attachments_count
+                attachments_count = self.process_message_attachments(
+                    detailed_message, subject_regex, filename_regex
+                )
+                
+                if attachments_count == 0 and (subject_regex or filename_regex):
+                    filtered_messages += 1
+                else:
+                    total_attachments += attachments_count
+                
                 processed_messages += 1
             
         stats = {
             'messages_processed': processed_messages,
-            'attachments_downloaded': total_attachments
+            'attachments_downloaded': total_attachments,
+            'messages_filtered': filtered_messages
         }
         
         logger.info(f"Download complete! Processed {processed_messages} messages, downloaded {total_attachments} attachments")
+        if filtered_messages > 0:
+            logger.info(f"Filtered out {filtered_messages} messages due to regex constraints")
         return stats
 
 
@@ -264,16 +356,38 @@ def main():
     
     # Get configuration from environment variables
     download_path = os.getenv('DOWNLOAD_PATH', './downloads')
-    search_query = os.getenv('SEARCH_QUERY', 'has:attachment')
+    base_search_query = os.getenv('SEARCH_QUERY', 'has:attachment')
     max_messages = int(os.getenv('MAX_MESSAGES', '100'))
+    
+    # New filtering options
+    date_from = os.getenv('DATE_FROM', '')
+    date_to = os.getenv('DATE_TO', '')
+    subject_regex = os.getenv('SUBJECT_REGEX', '')
+    filename_regex = os.getenv('FILENAME_REGEX', '')
+    create_subject_folders = os.getenv('CREATE_SUBJECT_FOLDERS', 'true').lower() == 'true'
     
     logger.info(f"Configuration:")
     logger.info(f"  Download path: {download_path}")
-    logger.info(f"  Search query: {search_query}")
+    logger.info(f"  Base search query: {base_search_query}")
     logger.info(f"  Max messages: {max_messages}")
+    logger.info(f"  Create subject folders: {create_subject_folders}")
+    if date_from:
+        logger.info(f"  Date from: {date_from}")
+    if date_to:
+        logger.info(f"  Date to: {date_to}")
+    if subject_regex:
+        logger.info(f"  Subject regex: {subject_regex}")
+    if filename_regex:
+        logger.info(f"  Filename regex: {filename_regex}")
     
     # Create downloader instance
-    downloader = GmailDownloader(download_path)
+    downloader = GmailDownloader(download_path, create_subject_folders)
+    
+    # Build complete search query
+    search_query = downloader.build_search_query(
+        base_search_query, date_from, date_to, subject_regex
+    )
+    logger.info(f"  Final search query: {search_query}")
     
     # Authenticate
     if not downloader.authenticate():
@@ -282,15 +396,20 @@ def main():
     
     # Download attachments
     try:
-        stats = downloader.download_all_attachments(search_query, max_messages)
+        stats = downloader.download_all_attachments(
+            search_query, max_messages, subject_regex, filename_regex
+        )
         
-        logger.info("=" * 50)
+        logger.info("=" * 60)
         logger.info("DOWNLOAD SUMMARY")
-        logger.info("=" * 50)
+        logger.info("=" * 60)
         logger.info(f"Messages processed: {stats['messages_processed']}")
         logger.info(f"Attachments downloaded: {stats['attachments_downloaded']}")
+        if stats.get('messages_filtered', 0) > 0:
+            logger.info(f"Messages filtered out: {stats['messages_filtered']}")
         logger.info(f"Download location: {download_path}")
-        logger.info("=" * 50)
+        logger.info(f"Subject folders: {'Enabled' if create_subject_folders else 'Disabled'}")
+        logger.info("=" * 60)
         
     except KeyboardInterrupt:
         logger.info("Download interrupted by user")

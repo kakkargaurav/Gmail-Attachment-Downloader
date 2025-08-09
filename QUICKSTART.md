@@ -36,6 +36,7 @@ docker run -it --rm \
   -v $(pwd)/logs:/app/logs \
   -e SEARCH_QUERY="has:attachment" \
   -e MAX_MESSAGES=50 \
+  -e CREATE_SUBJECT_FOLDERS=true \
   ghcr.io/gaurav/gmail-downloader:latest
 ```
 
@@ -60,6 +61,12 @@ services:
       - MAX_MESSAGES=100
       - DOWNLOAD_PATH=/app/downloads
       - GMAIL_CREDENTIALS_FILE=/app/credentials/credentials.json
+      - CREATE_SUBJECT_FOLDERS=true
+      # Advanced filtering options
+      # - DATE_FROM=2024/01/01
+      # - DATE_TO=2024/12/31
+      # - SUBJECT_REGEX=.*invoice.*
+      # - FILENAME_REGEX=\.(pdf|xlsx?)$
     volumes:
       - ./downloads:/app/downloads
       - ./credentials:/app/credentials
@@ -76,13 +83,44 @@ docker-compose up
 
 ## 🔧 Configuration Options
 
-### Environment Variables
+### Basic Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SEARCH_QUERY` | Gmail search filter | `has:attachment` |
 | `MAX_MESSAGES` | Max messages to process | `100` |
 | `DOWNLOAD_PATH` | Download directory | `/app/downloads` |
+| `CREATE_SUBJECT_FOLDERS` | Create folders by subject | `true` |
+
+### Advanced Filtering Options
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DATE_FROM` | Start date (YYYY/MM/DD) | `2024/01/01` |
+| `DATE_TO` | End date (YYYY/MM/DD) | `2024/12/31` |
+| `SUBJECT_REGEX` | Subject regex filter | `.*invoice.*` |
+| `FILENAME_REGEX` | Filename regex filter | `\.(pdf\|xlsx?)$` |
+
+### Quick Examples
+
+```bash
+# Download only PDFs from 2024
+-e DATE_FROM="2024/01/01" \
+-e DATE_TO="2024/12/31" \
+-e FILENAME_REGEX="\.pdf$"
+
+# Download invoices without subject folders
+-e SUBJECT_REGEX=".*invoice.*" \
+-e CREATE_SUBJECT_FOLDERS=false
+
+# Download recent office documents
+-e DATE_FROM="2024/06/01" \
+-e FILENAME_REGEX="\.(pdf|doc|docx|xls|xlsx)$"
+
+# Download from specific sender with date range
+-e SEARCH_QUERY="has:attachment from:billing@company.com" \
+-e DATE_FROM="2024/01/01"
+```
 
 ### Common Search Queries
 
@@ -93,14 +131,14 @@ SEARCH_QUERY="has:attachment"
 # From specific sender
 SEARCH_QUERY="has:attachment from:sender@example.com"
 
-# With specific subject
+# With specific subject (basic Gmail search)
 SEARCH_QUERY="has:attachment subject:Invoice"
-
-# From last 7 days
-SEARCH_QUERY="has:attachment newer_than:7d"
 
 # Larger than 5MB
 SEARCH_QUERY="has:attachment larger:5M"
+
+# Note: For precise filtering, use regex environment variables
+# instead of complex Gmail search queries
 ```
 
 ## 📁 Output Structure
