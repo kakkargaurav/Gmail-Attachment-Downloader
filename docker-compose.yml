@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  gmail-downloader:
+    # Option 1: Use pre-built image from GitHub Container Registry
+    # image: ghcr.io/USERNAME/gmail-downloader:latest
+    
+    # Option 2: Build locally (default)
+    build: .
+    
+    container_name: gmail-downloader
+    environment:
+      - DOWNLOAD_PATH=/app/downloads
+      - SEARCH_QUERY=has:attachment
+      - MAX_MESSAGES=100
+      - GMAIL_CREDENTIALS_FILE=/app/credentials/credentials.json
+      # Add your Gmail credentials as environment variables if using service account
+      # - GMAIL_USERNAME=${GMAIL_USERNAME}
+      # - GMAIL_PASSWORD=${GMAIL_PASSWORD}
+    volumes:
+      - ./downloads:/app/downloads
+      - ./credentials:/app/credentials
+      - ./logs:/app/logs
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  # Alternative service using pre-built image
+  gmail-downloader-ghcr:
+    image: ghcr.io/USERNAME/gmail-downloader:latest
+    container_name: gmail-downloader-ghcr
+    environment:
+      - DOWNLOAD_PATH=/app/downloads
+      - SEARCH_QUERY=has:attachment
+      - MAX_MESSAGES=100
+      - GMAIL_CREDENTIALS_FILE=/app/credentials/credentials.json
+    volumes:
+      - ./downloads:/app/downloads
+      - ./credentials:/app/credentials
+      - ./logs:/app/logs
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    profiles:
+      - ghcr
