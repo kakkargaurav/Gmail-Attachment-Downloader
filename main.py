@@ -142,7 +142,7 @@ class GmailDownloader:
         return ' '.join(query_parts)
 
     def get_messages(self, query: str = '', max_results: int = 100) -> List[Dict[str, Any]]:
-        """Get Gmail messages.
+        """Get Gmail messages with pagination support.
         
         Args:
             query: Gmail search query (e.g., 'has:attachment')
@@ -152,15 +152,42 @@ class GmailDownloader:
             List of message dictionaries
         """
         try:
-            logger.info(f"Searching for messages with query: '{query}'")
-            result = self.service.users().messages().list(
-                userId='me',
-                q=query,
-                maxResults=max_results
-            ).execute()
+            logger.info(f"Searching for messages with query: '{query}', max_results: {max_results}")
+            messages = []
+            next_page_token = None
+            total_fetched = 0
             
-            messages = result.get('messages', [])
-            logger.info(f"Found {len(messages)} messages")
+            while total_fetched < max_results:
+                # Gmail API limits maxResults to 500 per request
+                batch_size = min(500, max_results - total_fetched)
+                
+                logger.debug(f"Fetching batch of {batch_size} messages (total so far: {total_fetched})")
+                
+                result = self.service.users().messages().list(
+                    userId='me',
+                    q=query,
+                    maxResults=batch_size,
+                    pageToken=next_page_token
+                ).execute()
+                
+                batch_messages = result.get('messages', [])
+                messages.extend(batch_messages)
+                total_fetched += len(batch_messages)
+                
+                logger.info(f"Fetched {len(batch_messages)} messages in this batch (total: {total_fetched})")
+                
+                # Check if there are more pages
+                next_page_token = result.get('nextPageToken')
+                if not next_page_token:
+                    logger.info("No more pages available")
+                    break
+                    
+                # If we got fewer messages than requested in this batch, we've reached the end
+                if len(batch_messages) < batch_size:
+                    logger.info("Reached end of available messages")
+                    break
+            
+            logger.info(f"Total messages retrieved: {len(messages)}")
             return messages
             
         except HttpError as error:
@@ -352,6 +379,12 @@ class GmailDownloader:
 
 def main():
     """Main application entry point."""
+    # Enable debug logging if requested
+    debug_logging = os.getenv('DEBUG_LOGGING', 'false').lower() == 'true'
+    if debug_logging:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.info("Debug logging enabled")
+    
     logger.info("Gmail Attachment Downloader starting...")
     
     # Get configuration from environment variables
