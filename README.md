@@ -1,6 +1,6 @@
 # Gmail Attachment Downloader
 
-A Python application that downloads all attachments from Gmail messages using the Gmail API. The application can run locally or in a Docker container with environment variable configuration.
+A Python application that downloads all attachments from Gmail messages and converts emails to PDF using the Gmail API. The application can run locally or in a Docker container with environment variable configuration.
 
 [![Docker Build and Push](https://github.com/USERNAME/gmail-downloader/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/USERNAME/gmail-downloader/actions/workflows/docker-publish.yml)
 [![Container Registry](https://ghcr.io/USERNAME/gmail-downloader)](https://github.com/USERNAME/gmail-downloader/pkgs/container/gmail-downloader)
@@ -8,6 +8,11 @@ A Python application that downloads all attachments from Gmail messages using th
 ## Features
 
 - Download all attachments from Gmail messages
+- **Email-to-PDF Conversion:**
+  - Convert email content to PDF when no attachments are found
+  - Professional formatting with headers, styling, and metadata
+  - Support for HTML and plain text emails
+  - Optional functionality via `DOWNLOAD_EMAIL_IF_NO_ATTACHMENT`
 - **Advanced Filtering Options:**
   - Configurable search queries to filter messages
   - Date range filtering (DATE_FROM/DATE_TO)
@@ -138,6 +143,8 @@ docker run -v $(pwd)/downloads:/app/downloads \
 | `SEARCH_QUERY` | Gmail search query | `has:attachment` |
 | `MAX_MESSAGES` | Maximum messages to process | `100` |
 | `CREATE_SUBJECT_FOLDERS` | Create folders by email subject | `true` |
+| `DOWNLOAD_EMAIL_IF_NO_ATTACHMENT` | Convert emails to PDF if no attachments | `false` |
+| `DEBUG_LOGGING` | Enable detailed debug logging | `false` |
 
 ### Advanced Filtering Options
 
@@ -147,6 +154,19 @@ docker run -v $(pwd)/downloads:/app/downloads \
 | `DATE_TO` | End date (YYYY/MM/DD) | `2024/12/31` |
 | `SUBJECT_REGEX` | Subject line regex filter | `.*invoice.*` |
 | `FILENAME_REGEX` | Attachment filename regex | `\.(pdf\|xlsx?)$` |
+
+### Email-to-PDF Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DOWNLOAD_EMAIL_IF_NO_ATTACHMENT` | Generate PDF from email content when no attachments found | `false` |
+
+When enabled, this feature:
+- Removes `has:attachment` requirement from search queries
+- Processes all emails matching your filters
+- Downloads attachments when present, OR generates email PDF when no attachments exist
+- Creates professional PDF documents with email headers and formatted content
+- Maintains the same folder organization structure as attachments
 
 ### Configuration Examples
 
@@ -174,6 +194,25 @@ CREATE_SUBJECT_FOLDERS=false
 SEARCH_QUERY=has:attachment from:accounts@company.com
 DATE_FROM=2024/06/01
 DATE_TO=2024/06/30
+```
+
+#### Email-to-PDF Examples
+```bash
+# Convert all emails to PDF when no attachments (useful for newsletters, notifications)
+DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+SEARCH_QUERY=from:newsletter@company.com
+
+# Archive important emails as PDFs with attachments
+DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+SUBJECT_REGEX=.*(important|urgent|action required).*
+```
+
+#### Combined Email and Attachment Processing
+```bash
+# Download attachments AND convert emails to PDF when no attachments
+DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+DATE_FROM=2024/01/01
+SUBJECT_REGEX=.*(invoice|receipt|statement).*
 ```
 
 ### Search Query Examples
@@ -204,6 +243,11 @@ FILENAME_REGEX="\.(pptx?|docx?|xlsx?)$"
 DATE_FROM="2024/06/01"
 DATE_TO="2024/06/30"
 FILENAME_REGEX="\.(jpg|jpeg|png|gif)$"
+
+# Email archival - convert all emails to searchable PDFs
+DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+SEARCH_QUERY=""  # No specific search, process all emails
+DEBUG_LOGGING=true  # Enable detailed logging for large operations
 ```
 
 ## Usage
@@ -259,12 +303,25 @@ downloads/
 ├── Subject_Line_MessageID/
 │   ├── attachment1.pdf
 │   ├── attachment2.jpg
+│   ├── email_content.pdf          # Generated when DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
 │   └── ...
 ├── Another_Subject_MessageID/
 │   ├── document.docx
 │   └── ...
+├── Newsletter_Subject_MessageID/
+│   └── email_content.pdf          # Email with no attachments converted to PDF
 └── ...
 ```
+
+### Email PDF Features
+
+When `DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true`, generated PDFs include:
+- **Professional formatting** with CSS styling
+- **Email headers**: From, To, Date, Subject
+- **Full email content**: HTML rendering or formatted plain text
+- **Inline image support** (where possible)
+- **Generated signature** indicating Gmail Downloader source
+- **Same organization** as attachments (subject folders or direct download)
 
 ## Logging
 
@@ -305,11 +362,23 @@ The application creates detailed logs in:
 
 ### Debug Mode
 
-Enable verbose logging by modifying the logging level in `main.py`:
+Enable verbose logging with the `DEBUG_LOGGING` environment variable:
 
-```python
-logging.basicConfig(level=logging.DEBUG, ...)
+```bash
+DEBUG_LOGGING=true python main.py
 ```
+
+Or in Docker:
+```bash
+docker-compose run -e DEBUG_LOGGING=true gmail-downloader
+```
+
+This enables detailed logging for:
+- Gmail API pagination progress
+- Email content extraction details
+- PDF generation process
+- Search query modifications
+- Filter match details
 
 ## Development
 
@@ -390,6 +459,14 @@ For issues and questions:
 3. Create an issue in the project repository
 
 ## Changelog
+
+### v3.0.0 - Email-to-PDF & Advanced Processing
+- **📄 Email-to-PDF Conversion**: Convert emails to professional PDFs when no attachments present
+- **🔧 Smart Query Processing**: Automatic search query modification for email processing
+- **⚡ Unlimited Message Processing**: Gmail API pagination support for processing >500 messages
+- **🐛 Enhanced Debugging**: Comprehensive debug logging with `DEBUG_LOGGING` option
+- **🏗️ Improved Dependencies**: WeasyPrint integration for high-quality PDF generation
+- **📋 Professional PDF Format**: Styled email content with headers, metadata, and formatting
 
 ### v2.0.0 - Enhanced Filtering & Organization
 - **🎯 Advanced Filtering**: Date range filtering with `DATE_FROM`/`DATE_TO`

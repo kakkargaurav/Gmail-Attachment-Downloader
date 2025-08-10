@@ -1,6 +1,6 @@
 # 🚀 Quick Start Guide
 
-Get up and running with Gmail Attachment Downloader in minutes!
+Get up and running with Gmail Attachment Downloader and Email-to-PDF converter in minutes!
 
 ## 📋 Prerequisites
 
@@ -37,6 +37,7 @@ docker run -it --rm \
   -e SEARCH_QUERY="has:attachment" \
   -e MAX_MESSAGES=50 \
   -e CREATE_SUBJECT_FOLDERS=true \
+  -e DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=false \
   ghcr.io/gaurav/gmail-downloader:latest
 ```
 
@@ -62,6 +63,9 @@ services:
       - DOWNLOAD_PATH=/app/downloads
       - GMAIL_CREDENTIALS_FILE=/app/credentials/credentials.json
       - CREATE_SUBJECT_FOLDERS=true
+      # Email-to-PDF functionality
+      # - DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=false
+      # - DEBUG_LOGGING=false
       # Advanced filtering options
       # - DATE_FROM=2024/01/01
       # - DATE_TO=2024/12/31
@@ -91,6 +95,8 @@ docker-compose up
 | `MAX_MESSAGES` | Max messages to process | `100` |
 | `DOWNLOAD_PATH` | Download directory | `/app/downloads` |
 | `CREATE_SUBJECT_FOLDERS` | Create folders by subject | `true` |
+| `DOWNLOAD_EMAIL_IF_NO_ATTACHMENT` | Convert emails to PDF | `false` |
+| `DEBUG_LOGGING` | Enable detailed logging | `false` |
 
 ### Advanced Filtering Options
 
@@ -120,6 +126,15 @@ docker-compose up
 # Download from specific sender with date range
 -e SEARCH_QUERY="has:attachment from:billing@company.com" \
 -e DATE_FROM="2024/01/01"
+
+# Convert emails to PDF when no attachments (newsletters, notifications)
+-e DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true \
+-e SEARCH_QUERY="from:newsletter@company.com"
+
+# Archive all emails from 2024 as PDFs with debug logging
+-e DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true \
+-e DATE_FROM="2024/01/01" \
+-e DEBUG_LOGGING=true
 ```
 
 ### Common Search Queries
@@ -143,6 +158,7 @@ SEARCH_QUERY="has:attachment larger:5M"
 
 ## 📁 Output Structure
 
+### With Email-to-PDF Disabled (Default)
 ```
 downloads/
 ├── Subject_Line_MessageID/
@@ -151,6 +167,19 @@ downloads/
 │   └── ...
 └── Another_Subject_MessageID/
     └── document.docx
+```
+
+### With Email-to-PDF Enabled
+```
+downloads/
+├── Email_With_Attachments_MessageID/
+│   ├── attachment1.pdf
+│   ├── attachment2.jpg
+│   └── email_content.pdf        # Generated when both attachments and email content exist
+├── Newsletter_Subject_MessageID/
+│   └── email_content.pdf        # Generated when no attachments found
+└── Important_Email_MessageID/
+    └── email_content.pdf        # Professional PDF with headers and formatting
 ```
 
 ## 🛠️ Troubleshooting
@@ -170,9 +199,17 @@ downloads/
 - Check volume mount permissions
 - Ensure Docker has access to the directories
 
+**Email-to-PDF Issues**
+- Ensure WeasyPrint dependencies are installed (included in Docker image)
+- Check `DEBUG_LOGGING=true` for detailed PDF generation logs
+- Verify emails have readable content (some encrypted emails may not convert)
+
 ### Debug Commands
 
 ```bash
+# Check container logs with debug logging
+docker run -e DEBUG_LOGGING=true [other options] ghcr.io/gaurav/gmail-downloader:latest
+
 # Check container logs
 docker logs gmail-downloader
 
@@ -181,14 +218,47 @@ docker exec -it gmail-downloader /bin/bash
 
 # Test Gmail API connectivity
 docker exec gmail-downloader python -c "from googleapiclient.discovery import build; print('OK')"
+
+# Test PDF generation libraries
+docker exec gmail-downloader python -c "from weasyprint import HTML; print('PDF support OK')"
 ```
 
 ## 🎯 Next Steps
 
 1. **Customize Search**: Modify `SEARCH_QUERY` for specific needs
-2. **Automate**: Set up scheduled runs with cron or task scheduler  
-3. **Monitor**: Check logs in the `logs/` directory
-4. **Scale**: Deploy to cloud platforms for larger operations
+2. **Enable Email-to-PDF**: Set `DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true` for email archival
+3. **Automate**: Set up scheduled runs with cron or task scheduler
+4. **Monitor**: Check logs in the `logs/` directory with `DEBUG_LOGGING=true` for troubleshooting
+5. **Scale**: Deploy to cloud platforms for larger operations
+
+## 📄 Email-to-PDF Quick Examples
+
+```bash
+# Archive important emails as PDFs
+docker run -it --rm \
+  -v $(pwd)/downloads:/app/downloads \
+  -v $(pwd)/credentials:/app/credentials \
+  -e DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true \
+  -e SUBJECT_REGEX=".*important.*" \
+  ghcr.io/gaurav/gmail-downloader:latest
+
+# Convert newsletters to readable PDFs
+docker run -it --rm \
+  -v $(pwd)/downloads:/app/downloads \
+  -v $(pwd)/credentials:/app/credentials \
+  -e DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true \
+  -e SEARCH_QUERY="from:newsletter@company.com" \
+  ghcr.io/gaurav/gmail-downloader:latest
+
+# Process everything with debug logging
+docker run -it --rm \
+  -v $(pwd)/downloads:/app/downloads \
+  -v $(pwd)/credentials:/app/credentials \
+  -e DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true \
+  -e DEBUG_LOGGING=true \
+  -e MAX_MESSAGES=1000 \
+  ghcr.io/gaurav/gmail-downloader:latest
+```
 
 ## 📚 Additional Resources
 

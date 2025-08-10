@@ -1,6 +1,6 @@
 # 🚀 Advanced Usage Examples
 
-This guide demonstrates advanced filtering and configuration options for the Gmail Attachment Downloader.
+This guide demonstrates advanced filtering and configuration options for the Gmail Attachment Downloader and Email-to-PDF converter.
 
 ## 📋 Quick Reference
 
@@ -9,6 +9,8 @@ This guide demonstrates advanced filtering and configuration options for the Gma
 | Variable | Type | Description | Example |
 |----------|------|-------------|---------|
 | `CREATE_SUBJECT_FOLDERS` | Boolean | Create folders by email subject | `true` / `false` |
+| `DOWNLOAD_EMAIL_IF_NO_ATTACHMENT` | Boolean | Convert emails to PDF | `true` / `false` |
+| `DEBUG_LOGGING` | Boolean | Enable detailed logging | `true` / `false` |
 | `DATE_FROM` | Date | Start date filter | `2024/01/01` |
 | `DATE_TO` | Date | End date filter | `2024/12/31` |
 | `SUBJECT_REGEX` | Regex | Subject line pattern | `.*invoice.*` |
@@ -123,6 +125,69 @@ docker run -it --rm \
   ghcr.io/gaurav/gmail-downloader:latest
 ```
 
+### 8. Newsletter and Email Archival
+
+**Scenario**: Convert newsletters, notifications, and important emails to searchable PDFs.
+
+```bash
+docker run -it --rm \
+  -v $(pwd)/email-archive:/app/downloads \
+  -v $(pwd)/credentials:/app/credentials \
+  -e DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true \
+  -e SEARCH_QUERY="from:(newsletter@company.com OR notifications@service.com)" \
+  -e DATE_FROM="2024/01/01" \
+  -e CREATE_SUBJECT_FOLDERS=true \
+  -e DEBUG_LOGGING=true \
+  ghcr.io/gaurav/gmail-downloader:latest
+```
+
+### 9. Complete Email Backup Solution
+
+**Scenario**: Download attachments AND convert emails to PDF for complete backup.
+
+```bash
+docker run -it --rm \
+  -v $(pwd)/complete-backup:/app/downloads \
+  -v $(pwd)/credentials:/app/credentials \
+  -e DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true \
+  -e SUBJECT_REGEX=".*(important|urgent|receipt|invoice).*" \
+  -e DATE_FROM="2024/01/01" \
+  -e MAX_MESSAGES=1000 \
+  -e DEBUG_LOGGING=true \
+  ghcr.io/gaurav/gmail-downloader:latest
+```
+
+### 10. Legal and Compliance Archive
+
+**Scenario**: Archive all emails from specific domains as PDFs for compliance.
+
+```bash
+docker run -it --rm \
+  -v $(pwd)/compliance:/app/downloads \
+  -v $(pwd)/credentials:/app/credentials \
+  -e DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true \
+  -e SEARCH_QUERY="from:*@legal-firm.com OR from:*@court.gov" \
+  -e CREATE_SUBJECT_FOLDERS=true \
+  -e MAX_MESSAGES=500 \
+  ghcr.io/gaurav/gmail-downloader:latest
+```
+
+### 11. Newsletter and Content Archive
+
+**Scenario**: Convert specific newsletters to readable PDFs without search restrictions.
+
+```bash
+docker run -it --rm \
+  -v $(pwd)/newsletters:/app/downloads \
+  -v $(pwd)/credentials:/app/credentials \
+  -e DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true \
+  -e SEARCH_QUERY="from:weekly@newsletter.com" \
+  -e SUBJECT_REGEX="" \
+  -e CREATE_SUBJECT_FOLDERS=false \
+  -e DEBUG_LOGGING=true \
+  ghcr.io/gaurav/gmail-downloader:latest
+```
+
 ## 🔍 Advanced Regex Patterns
 
 ### Subject Regex Examples
@@ -197,6 +262,63 @@ MAX_MESSAGES=25
 FILENAME_REGEX="\.pdf$"
 ```
 
+## 📄 Email-to-PDF Advanced Patterns
+
+### Email-to-PDF with Smart Filtering
+
+```bash
+# Archive all emails from specific timeframe as PDFs
+DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+SEARCH_QUERY=""  # Remove attachment requirement
+DATE_FROM="2024/06/01"
+DATE_TO="2024/06/30"
+SUBJECT_REGEX=".*(meeting|agenda|summary).*"
+
+# Convert marketing emails to PDFs for review
+DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+SEARCH_QUERY="from:(marketing@company.com OR promo@service.com)"
+CREATE_SUBJECT_FOLDERS=false
+DEBUG_LOGGING=true
+
+# Backup important notifications as PDFs
+DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+SUBJECT_REGEX=".*(alert|notification|security|backup).*"
+DATE_FROM="2024/01/01"
+MAX_MESSAGES=200
+```
+
+### Combined Attachment and Email Processing
+
+```bash
+# Process everything - attachments AND email content
+DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+SEARCH_QUERY="from:support@company.com"  # Don't include has:attachment
+SUBJECT_REGEX=".*(ticket|support|issue).*"
+FILENAME_REGEX="\.(pdf|png|log)$"
+CREATE_SUBJECT_FOLDERS=true
+
+# Archive financial communications completely
+DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+SEARCH_QUERY="from:*@bank.com"
+SUBJECT_REGEX=".*(statement|transaction|alert).*"
+DATE_FROM="2024/01/01"
+```
+
+### PDF Generation Troubleshooting
+
+```bash
+# Enable detailed PDF generation logging
+DEBUG_LOGGING=true
+DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+MAX_MESSAGES=5  # Start small for testing
+
+# Test PDF conversion with simple emails
+DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+SEARCH_QUERY="from:noreply@github.com"
+DEBUG_LOGGING=true
+MAX_MESSAGES=3
+```
+
 ## 🐳 Docker Compose Examples
 
 ### Multi-Purpose Download Setup
@@ -227,6 +349,34 @@ services:
       - ./downloads/photos:/app/downloads
       - ./credentials:/app/credentials
 
+  # Email archive as PDFs
+  email-archive:
+    image: ghcr.io/gaurav/gmail-downloader:latest
+    environment:
+      - DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+      - SEARCH_QUERY=from:newsletter@company.com
+      - DATE_FROM=2024/01/01
+      - CREATE_SUBJECT_FOLDERS=true
+      - DEBUG_LOGGING=true
+    volumes:
+      - ./downloads/emails:/app/downloads
+      - ./credentials:/app/credentials
+
+  # Complete backup (attachments + emails)
+  complete-backup:
+    image: ghcr.io/gaurav/gmail-downloader:latest
+    environment:
+      - DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+      - SUBJECT_REGEX=.*(important|urgent|invoice).*
+      - DATE_FROM=2024/01/01
+      - MAX_MESSAGES=500
+      - DEBUG_LOGGING=true
+    volumes:
+      - ./downloads/complete:/app/downloads
+      - ./credentials:/app/credentials
+    profiles:
+      - backup
+
   # Documents archive
   documents:
     image: ghcr.io/gaurav/gmail-downloader:latest
@@ -250,15 +400,29 @@ docker-compose up
 
 # Run documents service
 docker-compose --profile documents up documents
+
+# Run complete backup
+docker-compose --profile backup up complete-backup
+
+# Run email archive
+docker-compose up email-archive
 ```
 
 ## 🔧 Troubleshooting Advanced Scenarios
 
 ### Debug Regex Patterns
 
-Add debugging environment variable:
+Enable detailed logging for troubleshooting:
 ```bash
--e DEBUG_REGEX=true  # (if implemented)
+-e DEBUG_LOGGING=true
+```
+
+Test PDF generation:
+```bash
+# Test email-to-PDF with small sample
+-e DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+-e DEBUG_LOGGING=true
+-e MAX_MESSAGES=3
 ```
 
 ### Check Filtering Results
@@ -274,6 +438,9 @@ The application reports:
 2. **Too many files**: Add more specific filters
 3. **Date format errors**: Use YYYY/MM/DD format
 4. **Permission errors**: Check volume mount permissions
+5. **PDF generation fails**: Check `DEBUG_LOGGING=true` for detailed errors
+6. **Empty PDFs**: Some encrypted emails may not convert properly
+7. **Missing email content**: Ensure emails have readable HTML or text content
 
 ### Testing Regex Patterns
 
@@ -292,6 +459,40 @@ MAX_MESSAGES=5
 4. **Organize by Purpose**: Create separate download directories
 5. **Regular Backups**: Archive downloaded files regularly
 6. **Monitor Logs**: Check filtering statistics in output
+7. **Test Email-to-PDF**: Enable `DEBUG_LOGGING=true` when testing PDF conversion
+8. **Smart Search Queries**: Remove `has:attachment` when using `DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true`
+9. **PDF Review**: Generated PDFs include metadata and professional formatting
+10. **Performance**: Large email processing may take time - use date ranges for efficiency
+
+## 📄 Email-to-PDF Best Practices
+
+### When to Use Email-to-PDF
+
+- **Newsletter archival**: Convert marketing emails to readable PDFs
+- **Compliance**: Archive business communications as searchable documents
+- **Important notifications**: Preserve system alerts and notifications
+- **Meeting summaries**: Convert email meeting notes to PDF format
+- **Legal communications**: Archive legal correspondence permanently
+
+### PDF Output Quality
+
+Generated PDFs include:
+- Professional CSS styling and formatting
+- Email metadata (From, To, Date, Subject)
+- Proper HTML rendering with images (where supported)
+- Generated signature for document authenticity
+- Searchable text content for easy retrieval
+
+### Performance Considerations
+
+```bash
+# Process large email volumes efficiently
+DOWNLOAD_EMAIL_IF_NO_ATTACHMENT=true
+DATE_FROM="2024/08/01"
+DATE_TO="2024/08/31"  # One month at a time
+MAX_MESSAGES=100      # Reasonable batch size
+DEBUG_LOGGING=false   # Disable for production runs
+```
 
 ---
 

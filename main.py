@@ -12,6 +12,7 @@ import json
 import base64
 import logging
 import re
+import html
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -22,6 +23,16 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+# PDF generation imports
+try:
+    from weasyprint import HTML, CSS
+    from bs4 import BeautifulSoup
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
+    logger = logging.getLogger(__name__)
+    logger.warning("PDF generation libraries not installed. Email-to-PDF functionality will be disabled.")
 
 # Gmail API scopes
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
@@ -41,16 +52,19 @@ logger = logging.getLogger(__name__)
 class GmailDownloader:
     """Gmail attachment downloader class."""
     
-    def __init__(self, download_path: str = './downloads', create_subject_folders: bool = True):
+    def __init__(self, download_path: str = './downloads', create_subject_folders: bool = True,
+                 download_email_if_no_attachment: bool = False):
         """Initialize the Gmail downloader.
         
         Args:
             download_path: Path where attachments will be saved
             create_subject_folders: Whether to create folders based on email subjects
+            download_email_if_no_attachment: Whether to download email content as PDF if no attachments
         """
         self.download_path = Path(download_path)
         self.download_path.mkdir(parents=True, exist_ok=True)
         self.create_subject_folders = create_subject_folders
+        self.download_email_if_no_attachment = download_email_if_no_attachment
         self.service = None
         self.credentials = None
         
@@ -113,7 +127,14 @@ class GmailDownloader:
         query_parts = []
         
         if base_query:
-            query_parts.append(base_query)
+            # If download_email_if_no_attachment is enabled, remove has:attachment requirement
+            if self.download_email_if_no_attachment and 'has:attachment' in base_query:
+                # Remove has:attachment and any leading/trailing whitespace
+                modified_query = base_query.replace('has:attachment', '').strip()
+                if modified_query:  # Only add if there's still content
+                    query_parts.append(modified_query)
+            else:
+                query_parts.append(base_query)
         
         if date_from:
             try:
@@ -248,6 +269,231 @@ class GmailDownloader:
             logger.error(f"Failed to download attachment {filename}: {str(e)}")
             return False
     
+    def extract_email_content(self, message: Dict[str, Any]) -> Dict[str, str]:
+        """Extract email content and metadata from Gmail message.
+        
+        Args:
+            message: Gmail message dictionary
+            
+        Returns:
+            Dictionary containing email content and metadata
+        """
+        headers = message.get('payload', {}).get('headers', [])
+        
+        # Extract headers
+        subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
+        from_addr = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown Sender')
+        to_addr = next((h['value'] for h in headers if h['name'].lower() == 'to'), 'Unknown Recipient')
+        date_header = next((h['value'] for h in headers if h['name'].lower() == 'date'), '')
+        
+        # Extract email body
+        body_html = ''
+        body_text = ''
+        
+        def extract_body_parts(parts):
+            nonlocal body_html, body_text
+            
+            for part in parts:
+                mime_type = part.get('mimeType', '')
+                
+                if mime_type == 'text/plain' and part.get('body', {}).get('data'):
+                    body_text = base64.urlsafe_b64decode(part['body']['data']).decode('utf-8', errors='ignore')
+                elif mime_type == 'text/html' and part.get('body', {}).get('data'):
+                    body_html = base64.urlsafe_b64decode(part['body']['data']).decode('utf-8', errors='ignore')
+                elif 'parts' in part:
+                    extract_body_parts(part['parts'])
+        
+        # Extract body content
+        payload = message.get('payload', {})
+        if payload.get('parts'):
+            extract_body_parts(payload['parts'])
+        elif payload.get('body', {}).get('data'):
+            # Simple message without parts
+            mime_type = payload.get('mimeType', '')
+            body_data = base64.urlsafe_b64decode(payload['body']['data']).decode('utf-8', errors='ignore')
+            if mime_type == 'text/html':
+                body_html = body_data
+            else:
+                body_text = body_data
+        
+        return {
+            'subject': subject,
+            'from': from_addr,
+            'to': to_addr,
+            'date': date_header,
+            'body_html': body_html,
+            'body_text': body_text
+        }
+    
+    def format_email_as_html(self, content: Dict[str, str]) -> str:
+        """Format email content as HTML for PDF generation.
+        
+        Args:
+            content: Dictionary containing email content and metadata
+            
+        Returns:
+            Formatted HTML string
+        """
+        # Clean and escape content
+        subject = html.escape(content.get('subject', 'No Subject'))
+        from_addr = html.escape(content.get('from', 'Unknown Sender'))
+        to_addr = html.escape(content.get('to', 'Unknown Recipient'))
+        date_str = html.escape(content.get('date', ''))
+        
+        # Use HTML content if available, otherwise convert text to HTML
+        body_content = content.get('body_html', '')
+        if not body_content and content.get('body_text'):
+            # Convert plain text to HTML
+            body_content = html.escape(content['body_text']).replace('\n', '<br>')
+        elif body_content:
+            # Clean HTML content using BeautifulSoup if available
+            try:
+                if PDF_SUPPORT:
+                    soup = BeautifulSoup(body_content, 'html.parser')
+                    body_content = str(soup)
+            except:
+                pass
+        
+        if not body_content:
+            body_content = '<p><em>No content available</em></p>'
+        
+        # HTML template
+        html_template = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>{subject}</title>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    margin: 20px;
+                    line-height: 1.6;
+                    color: #333;
+                }}
+                .email-header {{
+                    border-bottom: 2px solid #ccc;
+                    padding-bottom: 15px;
+                    margin-bottom: 20px;
+                }}
+                .email-header h1 {{
+                    color: #2c3e50;
+                    margin-bottom: 10px;
+                    font-size: 24px;
+                }}
+                .metadata {{
+                    color: #666;
+                    font-size: 14px;
+                    background-color: #f8f9fa;
+                    padding: 10px;
+                    border-radius: 5px;
+                }}
+                .metadata p {{
+                    margin: 5px 0;
+                }}
+                .email-content {{
+                    margin-top: 20px;
+                    padding: 10px;
+                }}
+                .email-content img {{
+                    max-width: 100%;
+                    height: auto;
+                }}
+                .signature {{
+                    margin-top: 30px;
+                    padding-top: 10px;
+                    border-top: 1px solid #eee;
+                    font-size: 12px;
+                    color: #888;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="email-header">
+                <h1>{subject}</h1>
+                <div class="metadata">
+                    <p><strong>From:</strong> {from_addr}</p>
+                    <p><strong>To:</strong> {to_addr}</p>
+                    <p><strong>Date:</strong> {date_str}</p>
+                </div>
+            </div>
+            <div class="email-content">
+                {body_content}
+            </div>
+            <div class="signature">
+                <p>Generated by Gmail Attachment Downloader</p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return html_template
+    
+    def generate_email_pdf(self, html_content: str, filename: str) -> bool:
+        """Generate PDF from HTML email content.
+        
+        Args:
+            html_content: HTML formatted email content
+            filename: Name to save the PDF file as
+            
+        Returns:
+            True if PDF generation successful, False otherwise
+        """
+        if not PDF_SUPPORT:
+            logger.error("PDF generation not available. Install weasyprint: pip install weasyprint")
+            return False
+        
+        try:
+            file_path = self.download_path / filename
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Generate PDF using WeasyPrint
+            html_doc = HTML(string=html_content)
+            html_doc.write_pdf(str(file_path))
+            
+            file_size = file_path.stat().st_size
+            logger.info(f"Generated email PDF: {filename} ({file_size} bytes)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to generate PDF {filename}: {str(e)}")
+            return False
+    
+    def process_message_content(self, message: Dict[str, Any], message_id: str, safe_subject: str) -> bool:
+        """Process email content and generate PDF if no attachments.
+        
+        Args:
+            message: Gmail message dictionary
+            message_id: Gmail message ID
+            safe_subject: Safe filename version of subject
+            
+        Returns:
+            True if email PDF was generated, False otherwise
+        """
+        if not self.download_email_if_no_attachment or not PDF_SUPPORT:
+            return False
+        
+        try:
+            # Extract email content
+            content = self.extract_email_content(message)
+            
+            # Format as HTML
+            html_content = self.format_email_as_html(content)
+            
+            # Determine filename
+            if self.create_subject_folders:
+                folder_name = f"{safe_subject}_{message_id[:8]}"
+                filename = os.path.join(folder_name, "email_content.pdf")
+            else:
+                filename = f"{message_id[:8]}_email_content.pdf"
+            
+            # Generate PDF
+            return self.generate_email_pdf(html_content, filename)
+            
+        except Exception as e:
+            logger.error(f"Failed to process email content for message {message_id}: {str(e)}")
+            return False
+    
     def process_message_attachments(self, message: Dict[str, Any], subject_regex: str = '',
                                    filename_regex: str = '') -> int:
         """Process all attachments in a message.
@@ -319,7 +565,13 @@ class GmailDownloader:
         # Process message payload
         payload = message.get('payload', {})
         extract_attachments(payload)
-        
+
+        # If no attachments found and email-to-PDF is enabled, generate email PDF
+        if downloaded_count == 0 and self.download_email_if_no_attachment:
+            logger.debug(f"No attachments found for message {message_id}, generating email PDF")
+            if self.process_message_content(message, message_id, safe_subject):
+                downloaded_count = 1  # Count email PDF as one "download"
+
         return downloaded_count
     
     def download_all_attachments(self, query: str = 'has:attachment', max_messages: int = 100,
@@ -398,12 +650,14 @@ def main():
     subject_regex = os.getenv('SUBJECT_REGEX', '')
     filename_regex = os.getenv('FILENAME_REGEX', '')
     create_subject_folders = os.getenv('CREATE_SUBJECT_FOLDERS', 'true').lower() == 'true'
+    download_email_if_no_attachment = os.getenv('DOWNLOAD_EMAIL_IF_NO_ATTACHMENT', 'false').lower() == 'true'
     
     logger.info(f"Configuration:")
     logger.info(f"  Download path: {download_path}")
     logger.info(f"  Base search query: {base_search_query}")
     logger.info(f"  Max messages: {max_messages}")
     logger.info(f"  Create subject folders: {create_subject_folders}")
+    logger.info(f"  Download email if no attachment: {download_email_if_no_attachment}")
     if date_from:
         logger.info(f"  Date from: {date_from}")
     if date_to:
@@ -414,7 +668,7 @@ def main():
         logger.info(f"  Filename regex: {filename_regex}")
     
     # Create downloader instance
-    downloader = GmailDownloader(download_path, create_subject_folders)
+    downloader = GmailDownloader(download_path, create_subject_folders, download_email_if_no_attachment)
     
     # Build complete search query
     search_query = downloader.build_search_query(
